@@ -1,0 +1,257 @@
+---
+title: "hw4-timothy-welch"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error = TRUE)
+library(tidyverse)
+library(formattable)
+library(plotly)
+library(lubridate)
+library(RColorBrewer)
+```
+
+
+### Question 1: Monthly Payment of Amortization Formula
+
+#### 1.1) Function amortization()
+```{r}
+#' Calculate periodic payments of a loan
+#' Based on interest rate, number of years, number of periods per year, and principal of loan
+#' Periods must either by 0 or positive integer
+
+amortization <- function(principal = 1000, rate = 0.03, years = 30, periods = 12){
+  if(periods <=0){
+    stop('periods must be positive')
+  }
+  else{
+    pr = rate/periods
+    times = years * periods
+    principal * ((pr)*((1 + pr)^(times)))/(((1 + pr)^(times))-1)
+  }
+}
+```
+
+**Periodic Payment**
+
+*r = interest rate,*
+*P = loan principal,*
+*k = payment periods per year,*
+*n = number of years*
+
+\(pmt = P * \frac{\frac{r}{k}(1 + \frac{r}{k})^{nk}}{(1+ \frac{r}{k})^{nk} - 1}\)
+
+
+```{r}
+#testing Amortization function
+
+amortization(1000, 0.03, 2, 12)
+amortization(1000, 0.03, 2, -6)
+```
+#### 1.2) Use amortization()
+
+```{r}
+#vector of possible years, each index position is # of years
+n = c(seq(1:100))
+#empty vector
+vec = c()
+#appending each calculation to empty vector
+for(elem in n){
+  vec = append(vec, amortization(45000, 0.0525, years = elem, 12))
+}
+#converting to integer to properly search
+vec = as.integer(vec)
+#searching to find years
+years = which(vec == 200)
+years
+```
+
+It will take about 75 years of paying $200 per month to fully pay off the principal of the loan:
+
+```{r}
+amortization(45000, 0.0525, 10, 12)
+```
+
+To pay off the loan in 10 years, it will require paying $482.81 per month. 
+
+### Question 2: Loan Amortization Calculator
+
+#### 2.3) Function loan_calculator()
+```{r}
+
+#' Calculates periodic payments of a loan
+#' Based on interest rate, number of years, number of periods per year, and principal of loan
+#' Periods must either by 0 or positive integer
+
+princ_bal <- function(payment = 200, term, principal = 1000, rate = 0.03, periods = 12){
+  if(periods <=0){
+    stop('periods must be positive')
+  }
+  else{
+    pr = rate/periods
+    principal * ((1 + pr)^term) - ((payment*((1 + pr)^term - 1))/pr)
+  }
+}
+
+
+#' Creates loan amortization data-frame, a time-line of loan payments for lifespan of loan
+#' Data frame has 5 columns: term of payment, balance, payment amount, interest paid in the term, and principal paid in the term
+#' Inputs = principal amount, number of years, interest rate, and number of periods per year
+#' Periods must either by 0 or positive integer
+
+loan_calculater <- function(principal = 10000, rate = 0.03, years = 10, periods = 12){
+  #term variable
+  term = c(seq(0,(years*periods)-1)) 
+  
+  #payment variable
+  pay = amortization(principal, rate, years, periods) 
+  payment = c(rep(pay, length(term)))
+  
+  #balance variable
+  balance = c(rep(principal, length(term))) 
+  for(pos in 2:length(balance)){
+  balance[pos] = princ_bal(pay, term[pos], principal, rate)
+  }
+  
+  #interest variable
+  interest = c(rep(0, length(term)))
+  for(pos in 1:length(interest)){
+  interest[pos] = balance[pos] * rate/periods
+  }
+  
+  #principal variable
+  principal = c(rep(0, length(term)))
+  for(pos in 1:length(principal)){
+  principal[pos] = pay - interest[pos]
+  }
+  
+  #creating data frame
+  amort_df = data.frame(term = term, balance = balance, payment = payment, interest = interest, principal= principal)
+  amort_df
+}
+
+```
+
+##### Variables:
+
+*r = interest rate,*
+*P = loan principal,*
+*k = payment periods per year,*
+*n = number of years,*
+*m = payment term*
+
+##### Formulas:
+
+**Periodic Payment**
+
+\(pmt = P * \frac{\frac{r}{k}(1 + \frac{r}{k})^{nk}}{(1+ \frac{r}{k})^{nk} - 1}\)
+
+**Principal Balance**
+
+\(balance_{m} = P * (1 + \frac{r}{k})^m - pmt * \frac{(1 + \frac{r}{k})^{m} - 1}{\frac{r}{k}}\)
+
+**Interest Paid**
+
+\(interest_{m} = balance_{m} * \frac{r}{k}\)
+
+**Principal Paid**
+
+\(principal_{m} = pmt - interest_{m}\)
+
+#### 2.4) Testing loan_calculator()
+
+```{r}
+loan_calculater(10000, 0.02, 1, 12)
+```
+
+
+### Question 3: Loan Amortization Chart
+
+#### 3.1) Part 1
+```{r}
+bros <- loan_calculater(100000, 0.075, 30, 12)
+
+year = c(rep(0, nrow(bros)))
+years = c(seq(2011,2039))
+
+#indexing outlier years manually
+year[seq(0:9)] = 2010
+year[seq(length(year) - 3, length(year))] = 2040
+
+#for loop to fill in rest of years
+for(pos in 1:length(years)){
+  position = pos*10+(2*(pos-1))
+  year[seq(position, position + 11)] = years[pos]
+}
+#adding year vector to df
+bros$Date = year
+
+#converting df to grouped by year
+mort_df<- bros %>%
+  group_by(Date)%>%
+  summarise(Principal = sum(principal), Interest = sum(interest))
+
+#creating balance by year vector
+Balance = c(rep(0, nrow(mort_df)))
+Balance[1] = bros$balance[10]
+
+for(pos in 2:length(Balance) - 1){
+  position = pos*10+(2*(pos-1))
+  Balance[pos] = bros$balance[position]
+}
+
+#adding to df
+mort_df$Balance = currency(Balance)
+
+#displaying df
+head(mort_df)
+tail(mort_df)
+```
+#### 3.1) Part 2: ggplotly graphic
+
+```{r}
+#preparing data
+loan <- loan_calculater(100000, 0.075, 30, 12)
+
+#adding date column
+loan$Date = seq(my('04-2010'), my('03-2040'), by = "month")
+
+#converting to currency
+loan$Principal <- currency(loan$principal)
+loan$Balance <- currency(loan$balance)
+loan$Interest <- currency(loan$interest)
+```
+
+
+```{r}
+#visualization
+
+labs <- c('Balance (x100)', 'Principal Payment', 'Interest Payment')
+fill <- c("#CAB2D6" , "#B2DF8A", "#FB9A99" )
+x <- as.Date(c('2020-01-01', '2035-01-01', '2012-01-01'))
+y <- c(950, 750, 700)
+labeldata <- data.frame(x, y, labs, fill)
+
+amort_vis<- loan %>%
+  ggplot(aes(x = Date)) +
+  geom_area(aes(y = Principal), fill="#33A02C", alpha=0.2) +
+  geom_point(aes(y = Principal), color="#33A02C", size = 0.25) +
+  geom_area(aes(y = Interest), fill="#E31A1C" , alpha=0.2) +
+  geom_point(aes(y = Interest), color="#E31A1C" , size = 0.25) +
+  geom_point(aes(y = Balance/100), color = "#6A3D9A", size = 0.25) +
+  theme_classic() +
+  theme(text = element_text(family = 'Times New Roman'))+
+  labs(title = 'Payment Breakdown by Month of a $100,000, 7.5%, 30 Year Loan',
+       y = ' $',
+       x = 'Date')+
+  geom_label(aes(x, y, label = labs, group = NULL), fill = fill, data = labeldata, size = 4, family = 'Times New Roman') 
+
+#static visualization in ggplot
+amort_vis
+
+#interactive plotly visualization
+plot <- ggplotly(amort_vis)
+plot
+```
+
